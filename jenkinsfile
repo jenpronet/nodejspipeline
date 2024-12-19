@@ -1,20 +1,47 @@
-node {
-   def gitcommit
-   stage('Verificación SCM') {
-     checkout scm
-     sh "git rev-parse --short HEAD > .git/commit-id"                        
-     gitcommit = readFile('.git/commit-id').trim()
-   }
-   stage('test') {
-     nodejs(nodeJSInstallationName: 'nodejs') {
-       sh 'npm install --only=dev'
-       sh 'npm test'
-     }
-   }
-   stage('Docker Build & Push') {
-     docker.withRegistry('https://registry.hub.docker.com', 'docker-hub') {
-      def nuestraapp = docker.build("macloujulian/nodejsapp:${gitcommit}", ".")
-      nuestraapp.push()
-     }
-   }
+pipeline {
+    agent any
+    environment {
+        // Define variables globales
+        DOCKER_REGISTRY = 'https://registry.hub.docker.com'
+        DOCKER_CREDENTIALS = 'docker-hub'
+        NODEJS_VERSION = 'nodejs'
+    }
+    stages {
+        stage('Verificación SCM') {
+            steps {
+                script {
+                    checkout scm
+                    // Obtener el hash corto del último commit
+                    sh "git rev-parse --short HEAD > .git/commit-id"
+                    env.GIT_COMMIT = readFile('.git/commit-id').trim()
+                    echo "Último commit: ${env.GIT_COMMIT}"
+                }
+            }
+        }
+        stage('Instalar dependencias y pruebas') {
+            steps {
+                script {
+                    // Configurar Node.js
+                    nodejs(nodeJSInstallationName: env.NODEJS_VERSION) {
+                        echo "Instalando dependencias para desarrollo..."
+                        sh 'npm install --only=dev'
+                        echo "Ejecutando pruebas..."
+                        sh 'npm test'
+                    }
+                }
+            }
+        }
+        stage('Construir y publicar imagen Docker') {
+            steps {
+                script {
+                    // Usar las credenciales del Docker Hub
+                    docker.withRegistry(env.DOCKER_REGISTRY, env.DOCKER_CREDENTIALS) {
+                        def appImage = docker.build("macloujulian/nodejsapp:${env.GIT_COMMIT}", ".")
+                        echo "Publicando imagen Docker: macloujulian/nodejsapp:${env.GIT_COMMIT}"
+                        appImage.push()
+                    }
+                }
+            }
+        }
+    }
 }
